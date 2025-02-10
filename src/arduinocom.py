@@ -1,51 +1,69 @@
-import serial
-import time
+#include <mcp2515_can.h>
+#include <SPI.h>
 
-# ls /dev/ttyUSB*
-# sudo usermod -a -G dialout $USER
+#ifdef ARDUINO_SAMD_VARIANT_COMPLIANCE
+#define SERIAL SerialUSB
+#else
+#define SERIAL Serial
+#endif
 
-# Initialize the serial connection
-arduino = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
-time.sleep(2)  # Wait for the connection to stabilize
+mcp2515_can CAN(10);  // CS pin
 
-# Check if the connection is open
-if arduino.is_open:
-    print("Connection established!")
-else:
-    print("Failed to connect.")
-  
-# Initialize Pygame
-pygame.init()
-pygame.joystick.init()
+const float MAX_RPM = 10000.0f;
 
-joystick = pygame.joystick.Joystick(0)  # Logitech F710
-joystick.init()
+// Function declarations
+void comm_can_set_rpm(uint8_t controller_id, float rpm);
 
-def send_command(command):
-    arduino.write(f"{command};".encode('utf-8'))
-    time.sleep(0.01)  # Short delay to ensure data is sent
+// Setup
+void setup() {
+  SERIAL.begin(115200);
+  while (!SERIAL) {}
 
-try:
-    while True:
-        pygame.event.pump()  # Process events
-        
-        # Get joystick axes (e.g., left stick Y-axis for RPM)
-        axis_value = joystick.get_axis(1)  # Adjust based on joystick configuration
-        rpm = axis_value * 10000  # Scale axis to RPM range
-        
-        # Send RPM command to Arduino for all motors
-        send_command(f"rpm:104,{rpm}")
-        send_command(f"rpm:103,{rpm}")
-        send_command(f"rpm:102,{rpm}")
-        send_command(f"rpm:101,{rpm}")
-        
-        # Optional: Handle buttons (e.g., send position commands)
-        if joystick.get_button(0):  # Button A
-            send_command("pos:104,100.0")  # Example position
-        if joystick.get_button(1):  # Button B
-            send_command("pos:104,0.0")
-        
-        time.sleep(0.1)  # Control loop delay
-finally:
-    pygame.quit()
-    arduino.close()
+  if (CAN.begin(CAN_1000KBPS) != CAN_OK) {
+    SERIAL.println("CAN BUS Shield init fail");
+    while (1);
+  }
+  SERIAL.println("CAN init ok!");
+}
+
+// Main loop
+void loop() {
+  if (SERIAL.available()) {
+    String command = SERIAL.readStringUntil(';');  // Read command until ';'
+    parseCommand(command);  // Process the command
+  }
+}
+
+// Parse and process the command
+void parseCommand(String command) {
+  if (command.startsWith("rpm:")) {
+    // Parse RPM command
+    int separator = command.indexOf(',');
+    String id_str = command.substring(4, separator);
+    String rpm_str = command.substring(separator + 1);
+
+    uint8_t motor_id = id_str.toInt();    // Extract motor ID
+    float rpm = rpm_str.toFloat();        // Extract RPM value
+
+    if (rpm > MAX_RPM) rpm = MAX_RPM;     // Clamp RPM to max limit
+    if (rpm < -MAX_RPM) rpm = -MAX_RPM;
+
+    comm_can_set_rpm(motor_id, rpm);
+  } else if (command.startsWith("pos:")) {
+    // Handle position commands (optional)
+    SERIAL.println("Position command received");
+  }
+}
+
+// Send RPM command to motor via CAN
+void comm_can_set_rpm(uint8_t controller_id, float rpm) {
+  int32_t send_index = 0;
+  uint8_t buffer[4];
+  buffer[send_index++] = (int32_t)rpm >> 24;
+  buffer[send_index++] = (int32_t)rpm >> 16;
+  buffer[send_index++] = (int32_t)rpm >> 8;
+  buffer[send_index++] = (int32_t)rpm;
+
+  uint32_t can_id = controller_id | (AK_VELOCITY << 8);
+  CAN.sendMsgBuf(can_id, 1, send_index, buffer);  // Extended CAN frame
+}
