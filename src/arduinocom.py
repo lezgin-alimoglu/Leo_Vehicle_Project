@@ -18,40 +18,29 @@ def send_command(command):
     time.sleep(0.01)  # Short delay to ensure data is sent
 
 def scale_value(value, deadzone=0.1, scale=10000):
-    """
-    Scale joystick input values to motor RPM range, applying a deadzone.
-    Args:
-        value (float): Raw joystick axis value (-1.0 to 1.0).
-        deadzone (float): Threshold below which axis input is ignored.
-        scale (int): Multiplier to scale the axis value.
-    Returns:
-        float: The scaled value, or 0 if within the deadzone.
-    """
     if abs(value) < deadzone:
         return 0
     return value * scale
 
 try:
     while True:
-        pygame.event.pump()  # Process joystick events
+        pygame.event.pump()  
 
-        # Get right stick axes for movement
-        horizontal_value = joystick.get_axis(2)  # Right stick X-axis
-        vertical_value = joystick.get_axis(3)    # Right stick Y-axis
+        horizontal_value = joystick.get_axis(3)  
+        vertical_value = joystick.get_axis(4)    
 
-        # Scale axis values to RPM range
         horizontal_rpm = scale_value(horizontal_value)
         vertical_rpm = scale_value(vertical_value)
 
         # Determine motor commands based on direction
-        if vertical_rpm > 0:  # Move up
-            send_command(f"move:up,{vertical_rpm}")
-        elif vertical_rpm < 0:  # Move down
-            send_command(f"move:down,{abs(vertical_rpm)}")
+        if vertical_rpm > 0:  
+            send_command(f"move:down,{vertical_rpm}")
+        elif vertical_rpm < 0:  
+            send_command(f"move:up,{abs(vertical_rpm)}")
 
-        if horizontal_rpm > 0:  # Move right
+        if horizontal_rpm > 0: 
             send_command(f"move:right,{horizontal_rpm}")
-        elif horizontal_rpm < 0:  # Move left
+        elif horizontal_rpm < 0:  
             send_command(f"move:left,{abs(horizontal_rpm)}")
 
         # Add a small delay for the control loop
