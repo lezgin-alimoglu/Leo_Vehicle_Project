@@ -1,68 +1,74 @@
-import glob
-import pygame
 import serial
+import pygame
 import time
 
-def find_arduino_port():
-    # Potansiyel seri port dosyaları
-    ports = glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*')
-    for p in ports:
-        try:
-            s = serial.Serial(p, 115200, timeout=1)
-            s.close()
-            return p
-        except (OSError, serial.SerialException):
-            continue
-    raise IOError("Arduino portu bulunamadı. (/dev/ttyUSB* veya /dev/ttyACM* içinde)")
+# --- Serial Setup ---
+arduino_port = "/dev/ttyACM0"
+baud_rate = 9600
 
-# Auto-detect port
-arduino_port = find_arduino_port()
-print(f"[INFO] Arduino bulundu: {arduino_port}")
+try:
+    arduino = serial.Serial(arduino_port, baud_rate, timeout=1)
+    time.sleep(2)  # Allow Arduino to reset
+    print("[INFO] Connected to Arduino on /dev/ttyACM0")
+except serial.SerialException:
+    print("[ERROR] Could not open /dev/ttyACM0. Check USB connection.")
+    exit(1)
 
-# Initialize serial communication
-arduino = serial.Serial(arduino_port, 115200)
-time.sleep(2)  # Allow Arduino to initialize
-
-# Initialize Pygame
+# --- Pygame Setup ---
 pygame.init()
 pygame.joystick.init()
 
-joystick = pygame.joystick.Joystick(0)  # Logitech F710
+if pygame.joystick.get_count() == 0:
+    print("[ERROR] No joystick detected.")
+    exit(1)
+
+joystick = pygame.joystick.Joystick(0)
 joystick.init()
+print(f"[INFO] Joystick detected: {joystick.get_name()}")
 
-def send_command(command):
-    arduino.write(f"{command};".encode('utf-8'))
-    time.sleep(0.01)  # Short delay to ensure data is sent
+# --- Send a single character command to Arduino ---
+def send_command(char):
+    try:
+        arduino.write(char.encode("utf-8"))
+        time.sleep(0.01)
+    except:
+        print("[ERROR] Failed to send command")
 
-def scale_value(value, deadzone=0.1, scale=10000):
-    if abs(value) < deadzone:
+# --- Scale joystick input ---
+def get_direction(axis_val, threshold=0.3):
+    if axis_val > threshold:
+        return 1
+    elif axis_val < -threshold:
+        return -1
+    else:
         return 0
-    return int(value * scale)
 
+# --- Main Loop ---
 try:
     while True:
         pygame.event.pump()
 
-        horizontal_value = joystick.get_axis(3)
-        vertical_value   = joystick.get_axis(4)
+        # Read joystick axes
+        x = joystick.get_axis(3)  # right stick horizontal
+        y = joystick.get_axis(4)  # right stick vertical
 
-        horizontal_rpm = scale_value(horizontal_value)
-        vertical_rpm   = scale_value(vertical_value)
+        dir_x = get_direction(x)
+        dir_y = get_direction(y)
 
-        # Dikey hareket
-        if   vertical_rpm > 0:
-            send_command(f"move:down,{vertical_rpm}")
-        elif vertical_rpm < 0:
-            send_command(f"move:up,{abs(vertical_rpm)}")
-
-        # Yatay hareket
-        if   horizontal_rpm > 0:
-            send_command(f"move:right,{horizontal_rpm}")
-        elif horizontal_rpm < 0:
-            send_command(f"move:left,{abs(horizontal_rpm)}")
+        if dir_y == 1:
+            send_command('d')  # down
+        elif dir_y == -1:
+            send_command('u')  # up
+        elif dir_x == -1:
+            send_command('l')  # left
+        elif dir_x == 1:
+            send_command('r')  # right
+        else:
+            send_command('s')  # stop / neutral
 
         time.sleep(0.1)
 
 finally:
-    pygame.quit()
+    print("[INFO] Exiting...")
     arduino.close()
+    pygame.quit()
