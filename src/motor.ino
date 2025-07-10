@@ -16,9 +16,9 @@ int pulseBL = 1500;
 int pulseBR = 1500;
 
 const int neutralPulse = 1500;
-const int pulseStep = 100;      // Adım boyutu
-const int maxPulse = 2000;
-const int minPulse = 1000;
+const int maxPulse     = 2000;
+const int minPulse     = 1000;
+const int pulseStep    = 100;  // Geçici, test aşamasında küçük tutabilirsin
 
 void setup() {
   Serial.begin(9600);
@@ -26,8 +26,28 @@ void setup() {
   motorFR.attach(motorFRPin);
   motorBL.attach(motorBLPin);
   motorBR.attach(motorBRPin);
+
+  // ─── ESC ARMING SEQUENCE ───────────────────────────────
+  Serial.println("Arming ESCs...");
+  motorFL.writeMicroseconds(minPulse);
+  motorFR.writeMicroseconds(minPulse);
+  motorBL.writeMicroseconds(minPulse);
+  motorBR.writeMicroseconds(minPulse);
+  delay(3000);  // 3 saniye minimum throttle
+    
+  motorFL.writeMicroseconds(maxPulse);
+  motorFR.writeMicroseconds(maxPulse);
+  motorBL.writeMicroseconds(maxPulse);
+  motorBR.writeMicroseconds(maxPulse);
+  delay(2000);  // 2 saniye maximum throttle
+
+  pulseFL = neutralPulse;
+  pulseFR = neutralPulse;
+  pulseBL = neutralPulse;
+  pulseBR = neutralPulse;
   updateMotorSpeeds();
-  Serial.println("ESC controller ready. Use 'u','d','l','r','s'.");
+  delay(1000);  // 1 saniye neutral bekle
+  Serial.println("ESCs armed. Controller ready.");
 }
 
 void loop() {
@@ -49,22 +69,24 @@ void loop() {
         pulseBL = constrain(pulseBL + pulseStep, minPulse, maxPulse);
         pulseBR = constrain(pulseBR - pulseStep, minPulse, maxPulse);
         break;
-
-      case 'l':  // Roll left
-        pulseFL = constrain(pulseFL + pulseStep, minPulse, maxPulse);
-        pulseBL = constrain(pulseBL + pulseStep, minPulse, maxPulse);
+      // ─── inside your switch(cmd) ─────────────────────────────────
+      
+      case 'l':  // Turn left: left motors slow down, right motors speed up
+        pulseFL = constrain(pulseFL , minPulse, maxPulse);
+        pulseBL = constrain(pulseBL , minPulse, maxPulse);
         pulseFR = constrain(pulseFR + pulseStep, minPulse, maxPulse);
         pulseBR = constrain(pulseBR + pulseStep, minPulse, maxPulse);
         break;
-
-      case 'r':  // Roll right
+      
+      case 'r':  // Turn right: right motors slow down, left motors speed up
         pulseFL = constrain(pulseFL - pulseStep, minPulse, maxPulse);
         pulseBL = constrain(pulseBL - pulseStep, minPulse, maxPulse);
-        pulseFR = constrain(pulseFR - pulseStep, minPulse, maxPulse);
-        pulseBR = constrain(pulseBR - pulseStep, minPulse, maxPulse);
+        pulseFR = constrain(pulseFR , minPulse, maxPulse);
+        pulseBR = constrain(pulseBR , minPulse, maxPulse);
         break;
 
-      case 's':  // Smooth stop: her mikser darbesini neutralPulse'a yaklaştır
+
+      case 's':  // Smooth stop
         pulseFL = rampToNeutral(pulseFL);
         pulseFR = rampToNeutral(pulseFR);
         pulseBL = rampToNeutral(pulseBL);
@@ -72,17 +94,18 @@ void loop() {
         break;
 
       default:
-        // Tanınmayan komut: hiçbir şey yapma
         break;
     }
     updateMotorSpeeds();
     delay(20);
   }
 
-  Serial.print("FL: "); Serial.print(pulseFL);
-  Serial.print(" FR: "); Serial.print(pulseFR);
-  Serial.print(" BL: "); Serial.print(pulseBL);
-  Serial.print(" BR: "); Serial.println(pulseBR);
+  // Debug: her loop sonunda pulse değerlerini yazdır
+  Serial.print("DEBUG PULSES → ");
+  Serial.print(pulseFL); Serial.print(',');
+  Serial.print(pulseFR); Serial.print(',');
+  Serial.print(pulseBL); Serial.print(',');
+  Serial.println(pulseBR);
 }
 
 void updateMotorSpeeds() {
@@ -92,7 +115,6 @@ void updateMotorSpeeds() {
   motorBR.writeMicroseconds(pulseBR);
 }
 
-// Mevcut darbe genişliğini neutralPulse'a doğru bir adım ilerletir
 int rampToNeutral(int current) {
   if (current < neutralPulse) {
     return constrain(current + pulseStep, minPulse, neutralPulse);
