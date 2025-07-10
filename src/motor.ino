@@ -16,7 +16,7 @@ int pulseBL = 1500;
 int pulseBR = 1500;
 
 const int neutralPulse = 1500;
-const int pulseStep = 50;      // Adım boyutu
+const int pulseStep = 100;      // Adım boyutu
 const int maxPulse = 2000;
 const int minPulse = 1000;
 
