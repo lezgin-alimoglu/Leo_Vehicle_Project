@@ -1,45 +1,98 @@
+#!/usr/bin/env python3
+import os
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+import serial
 import pygame
 import time
 
-# Initialize Pygame and the joystick module
+# --- Serial Setup ---
+arduino_port = "/dev/ttyUSB0"
+baud_rate     = 9600
+
+try:
+    arduino = serial.Serial(arduino_port, baud_rate, timeout=1)
+    time.sleep(2)
+    print(f"[INFO] Connected to Arduino on {arduino_port}")
+except serial.SerialException:
+    print(f"[ERROR] Could not open {arduino_port}.")
+    exit(1)
+
+# --- Pygame Setup ---
 pygame.init()
 pygame.joystick.init()
-
-# Check for connected joysticks
 if pygame.joystick.get_count() == 0:
-    print("No joystick found! Please connect your Logitech F710.")
-    exit()
+    print("[ERROR] No joystick detected.")
+    arduino.close()
+    pygame.quit()
+    exit(1)
 
-# Get the first joystick
 joystick = pygame.joystick.Joystick(0)
 joystick.init()
+print(f"[INFO] Joystick: {joystick.get_name()}")
 
-print(f"Connected to joystick: {joystick.get_name()}")
+# --- Helpers ---
+DEADZONE = 0.3
+last_cmd = None
 
-# Main loop to read inputs
+def send_command(cmd):
+    global last_cmd
+    if cmd != last_cmd:
+        try:
+            arduino.write(cmd.encode())
+            print(f"[SEND] {cmd}")
+        except Exception as e:
+            print(f"[ERROR] Send failed: {e}")
+        last_cmd = cmd
+
+def get_direction(val):
+    if val > DEADZONE:  return 1
+    if val < -DEADZONE: return -1
+    return 0
+
+print("Ctrl+C ile çık, joystick ile yönlendir, A stop.")
+
+running = True
 try:
-    while True:
-        # Handle events
+    while running:
+        # --- sadece burada pygame.event çağırıyoruz ---
         for event in pygame.event.get():
-            if event.type == pygame.JOYBUTTONDOWN:
-                print(f"Button {event.button} pressed")
-            elif event.type == pygame.JOYBUTTONUP:
-                print(f"Button {event.button} released")
-            elif event.type == pygame.JOYAXISMOTION:
-                axis = event.axis
-                value = joystick.get_axis(axis)
-                print(f"Axis {axis} moved to {value:.2f}")
-            elif event.type == pygame.JOYHATMOTION:
-                hat = event.hat
-                value = joystick.get_hat(hat)
-                print(f"Hat {hat} moved to {value}")
+            if event.type == pygame.QUIT:
+                running = False
 
-        time.sleep(0.1)
+        # Joystick eksenleri
+        pitch = -joystick.get_axis(1)
+        roll  =  joystick.get_axis(2)
+
+        dy = get_direction(pitch)
+        dx = get_direction(roll)
+
+        # Buton A (0) ile stop öncelikli
+        if joystick.get_button(0):
+            cmd = 's'
+        elif dy == 1:
+            cmd = 'u'
+        elif dy == -1:
+            cmd = 'd'
+        elif dx == -1:
+            cmd = 'l'
+        elif dx == 1:
+            cmd = 'r'
+        else:
+            cmd = 's'
+
+        send_command(cmd)
+
+        time.sleep(0.05)
 
 except KeyboardInterrupt:
-    print("\nExiting...")
+    print("\n[INFO] KeyboardInterrupt, çıkılıyor...")
 
 finally:
-    # Clean up
-    joystick.quit()
+    # Çıkışta kesin nötr komut ve temizlik
+    send_command('s')
+    time.sleep(0.2)
+    arduino.close()
+    pygame.joystick.quit()
     pygame.quit()
+    print("[INFO] Motorlar nötr, serial ve pygame kapatıldı.")
